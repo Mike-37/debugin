@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tracepointdebug"
+version = "0.3.0" # update when you release
+description = "Non-breaking logpoints and tracing for Python; pytrace engine with optional native fallback."
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "AGPL-3.0" }
+authors = [{ name = "Your Name", email = "you@example.com" }]
+dependencies = [
+    "six >= 1.1",
+    "websocket-client >= 0.56.0",
+    "pystache >= 0.6.0",
+    "cachetools >= 5.2.0",
+    "antlr4-python3-runtime==4.9.2"
+]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.8",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Operating System :: POSIX :: Linux",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["tracepointdebug*"]
