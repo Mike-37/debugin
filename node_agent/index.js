@@ -10,13 +10,13 @@
  *   await agent.start({ sinkUrl: 'http://localhost:4317' });
  */
 
-const Inspector = require('./lib/inspector');
-const ProbeManager = require('./lib/probe-manager');
-const ConditionEvaluator = require('./lib/condition-evaluator');
-const RateLimiter = require('./lib/rate-limiter');
-const Snapshotter = require('./lib/snapshotter');
-const EventClient = require('./lib/event-client');
-const ControlAPI = require('./lib/control-api');
+const Inspector = require('./src/inspector');
+const ProbeManager = require('./src/probe-manager');
+const ConditionEvaluator = require('./src/condition-evaluator');
+const RateLimiter = require('./src/rate-limiter');
+const Snapshotter = require('./src/snapshotter');
+const EventClient = require('./src/event-client');
+const ControlAPI = require('./src/control-api');
 
 class DebugInAgent {
     constructor(options = {}) {
