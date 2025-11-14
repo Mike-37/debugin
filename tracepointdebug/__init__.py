@@ -1,4 +1,13 @@
 import atexit
+import os
+
+# Read version from VERSION file (single source of truth)
+_version_file = os.path.join(os.path.dirname(__file__), '..', 'VERSION')
+try:
+    with open(_version_file, 'r') as f:
+        __version__ = f.read().strip()
+except Exception:
+    __version__ = '0.3.0'  # fallback
 
 # Import control API to trigger auto-start if enabled
 from .control_api import start_control_api

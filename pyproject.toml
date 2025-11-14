@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tracepointdebug"
-version = "0.3.0" # update when you release
+dynamic = ["version"]
 description = "Non-breaking logpoints and tracing for Python; pytrace engine with optional native fallback."
 readme = "README.md"
 requires-python = ">=3.8"
@@ -36,3 +36,6 @@ dev = ["pytest>=8"]
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["tracepointdebug*"]
+
+[tool.setuptools.dynamic]
+version = {file = ["VERSION"]}
