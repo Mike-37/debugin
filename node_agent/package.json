@@ -1,0 +1,21 @@
+{
+  "name": "debugin-node-agent",
+  "version": "0.3.0",
+  "description": "DebugIn Node.js agent for runtime probe management",
+  "main": "index.js",
+  "scripts": {
+    "test": "node tests/test.js",
+    "start": "node index.js"
+  },
+  "keywords": [
+    "debug",
+    "probe",
+    "tracepoint",
+    "monitoring"
+  ],
+  "author": "DebugIn",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=12.0.0"
+  }
+}
