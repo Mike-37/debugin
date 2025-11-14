@@ -28,24 +28,32 @@ from tracepointdebug.probe.event.logpoint.log_point_event import LogPointEvent
 from tracepointdebug.probe.event.logpoint.put_logpoint_failed_event import PutLogPointFailedEvent
 from tracepointdebug.probe.event.tracepoint.put_tracepoint_failed_event import PutTracePointFailedEvent
 
+import logging
+logger = logging.getLogger(__name__)
+
 
 class ControlAPI:
     """HTTP Control API for the Python agent"""
-    
-    def __init__(self, port: int = 5001, host: str = "localhost"):
+
+    def __init__(self, port: int = 5001, host: str = "127.0.0.1"):
         self.port = port
-        self.host = host
+        # Default to 127.0.0.1 for security, but allow override via environment
+        # to bind to 0.0.0.0 if DEBUGIN_CONTROL_API_BIND_ALL is set
+        if os.environ.get("DEBUGIN_CONTROL_API_BIND_ALL", "").lower() in ("1", "true", "yes"):
+            self.host = "0.0.0.0"
+        else:
+            self.host = host
         self.app = Flask(__name__)
-        
+
         # Don't initialize managers immediately - they require broker manager which isn't available yet
         self.tracepoint_manager = None
         self.logpoint_manager = None
         self.tag_manager = None
         self.config_provider = None
-        
+
         # Dictionary to store point IDs for management
         self.point_ids: Dict[str, Dict[str, Any]] = {}
-        
+
         self._setup_routes()
         self.server_thread = None
         self.running = False
@@ -100,12 +108,32 @@ class ControlAPI:
             except:
                 pass
             
+            import platform
             return jsonify({
-                "ok": True,
-                "engine": engine,
-                "sink": sink_status,
-                "version": version,
-                "ft": {
+                "status": "healthy",
+                "agent": {
+                    "name": "tracepointdebug",
+                    "version": version,
+                    "runtime": "python",
+                    "runtimeVersion": platform.python_version()
+                },
+                "features": {
+                    "tracepoints": True,
+                    "logpoints": True,
+                    "conditions": True,
+                    "rateLimit": True,
+                    "freeThreaded": not gil_enabled_now
+                },
+                "broker": {
+                    "connected": self.broker_manager is not None,
+                    "url": "wss://broker.service.runsidekick.com:443" if self.broker_manager else "unknown"
+                },
+                "eventSink": {
+                    "connected": sink_status == "ok",
+                    "url": "http://127.0.0.1:4317"
+                },
+                "uptime": 0,
+                "_debug": {
                     "py_gil_disabled": py_gil_disabled,
                     "has_gil_check": has_gil_check,
                     "gil_enabled_now": gil_enabled_now
@@ -123,16 +151,27 @@ class ControlAPI:
         try:
             data = request.get_json(force=True, silent=True)
             if data is None:
-                return jsonify({"ok": False, "error": "Invalid JSON"}), 400
-            
+                return jsonify({
+                    "error": "Invalid JSON",
+                    "code": "INVALID_JSON"
+                }), 400
+
             # Validate required fields
             required_fields = ['file', 'line']
             for field in required_fields:
                 if field not in data:
                     return jsonify({
-                        "ok": False,
-                        "error": f"Missing required field: {field}"
+                        "error": f"Missing required field: {field}",
+                        "code": "MISSING_FIELD"
                     }), 400
+
+            # Validate line number
+            line_no = data.get('line')
+            if not isinstance(line_no, int) or line_no < 1:
+                return jsonify({
+                    "error": "Invalid line number: line must be >= 1",
+                    "code": "INVALID_LINE"
+                }), 400
             
             # Create tracepoint configuration
             file_path = data['file']
@@ -169,15 +208,21 @@ class ControlAPI:
                 "type": "tracepoint",
                 "config": data
             }
-            
+
             return jsonify({
-                "ok": True,
-                "id": point_id
-            })
+                "id": point_id,
+                "type": "tracepoint",
+                "file": file_path,
+                "line": line_no,
+                "enabled": True,
+                "created": "now",
+                "condition": data.get('condition')
+            }), 201
         except Exception as e:
+            logger.exception("Error creating tracepoint")
             return jsonify({
-                "ok": False,
-                "error": f"Exception occurred: {str(e)}"
+                "error": f"Failed to create tracepoint: {str(e)}",
+                "code": "TRACEPOINT_CREATE_ERROR"
             }), 500
     
     def put_logpoint(self):
@@ -561,8 +606,16 @@ class ControlAPI:
 control_api: Optional[ControlAPI] = None
 
 
-def start_control_api(port: int = 5001, host: str = "localhost", broker_manager=None, engine=None):
-    """Start the control API server"""
+def start_control_api(port: int = 5001, host: str = "127.0.0.1", broker_manager=None, engine=None):
+    """Start the control API server
+
+    Args:
+        port: Port to bind to (default: 5001)
+        host: Host to bind to (default: 127.0.0.1 for localhost only)
+              Set DEBUGIN_CONTROL_API_BIND_ALL=1 to bind to 0.0.0.0 for remote access
+        broker_manager: BrokerManager instance
+        engine: Trace engine instance
+    """
     global control_api
     if control_api is None:
         control_api = ControlAPI(port=port, host=host)
