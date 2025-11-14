@@ -20,6 +20,7 @@ import queue
 import threading
 import requests
 import logging
+import uuid
 from typing import List, Dict, Any, Optional, Callable
 from datetime import datetime, timezone
 from contextlib import contextmanager
@@ -159,6 +160,127 @@ class EventCapture:
             self._events = []
         return count
 
+    @staticmethod
+    def make_tracepoint(
+        lang: str,
+        file: str,
+        line: int,
+        condition: Optional[str] = None,
+        sample: Optional[Dict[str, Any]] = None,
+        snapshot: Optional[Dict[str, Any]] = None,
+        tags: Optional[List[str]] = None
+    ) -> Dict[str, Any]:
+        """
+        Create a canonical tracepoint probe configuration.
+
+        Args:
+            lang: Language ('python', 'java', 'node')
+            file: Source file path
+            line: Line number
+            condition: Optional condition expression
+            sample: Optional sample config (limitPerSecond, burst)
+            snapshot: Optional snapshot config (maxDepth, maxProps, etc)
+            tags: Optional list of tags
+
+        Returns:
+            Probe configuration dictionary
+        """
+        return {
+            "id": f"probe-{uuid.uuid4().hex[:12]}",
+            "file": file,
+            "line": line,
+            "condition": condition,
+            "sample": sample or {"limitPerSecond": 10, "burst": 1},
+            "snapshot": snapshot or {
+                "maxDepth": 5,
+                "maxProps": 50,
+                "params": True,
+                "fields": [],
+                "locals": True
+            },
+            "tags": tags or []
+        }
+
+    @staticmethod
+    def make_logpoint(
+        lang: str,
+        file: str,
+        line: int,
+        message: Optional[str] = None,
+        condition: Optional[str] = None,
+        sample: Optional[Dict[str, Any]] = None,
+        snapshot: Optional[Dict[str, Any]] = None,
+        tags: Optional[List[str]] = None
+    ) -> Dict[str, Any]:
+        """
+        Create a canonical logpoint probe configuration.
+
+        Args:
+            lang: Language ('python', 'java', 'node')
+            file: Source file path
+            line: Line number
+            message: Log message template
+            condition: Optional condition expression
+            sample: Optional sample config
+            snapshot: Optional snapshot config
+            tags: Optional list of tags
+
+        Returns:
+            Probe configuration dictionary
+        """
+        probe = EventCapture.make_tracepoint(
+            lang=lang,
+            file=file,
+            line=line,
+            condition=condition,
+            sample=sample,
+            snapshot=snapshot,
+            tags=tags
+        )
+        probe["message"] = message or f"Logpoint hit at {file}:{line}"
+        return probe
+
+    @staticmethod
+    def make_filter(
+        lang: Optional[str] = None,
+        event_type: Optional[str] = None,
+        probeId: Optional[str] = None,
+        location: Optional[Dict[str, Any]] = None,
+        tags: Optional[List[str]] = None
+    ) -> Callable[[Dict[str, Any]], bool]:
+        """
+        Create a filter function for events.
+
+        Args:
+            lang: Filter by language
+            event_type: Filter by event type
+            probeId: Filter by probe ID
+            location: Filter by location (file, line, class, method)
+            tags: Filter by tags (event must have all specified tags)
+
+        Returns:
+            Filter function that returns bool
+        """
+        def filter_fn(event: Dict[str, Any]) -> bool:
+            if lang and event.get("lang") != lang:
+                return False
+            if event_type and event.get("type") != event_type:
+                return False
+            if probeId and event.get("probeId") != probeId:
+                return False
+            if tags:
+                event_tags = event.get("tags", [])
+                if not all(tag in event_tags for tag in tags):
+                    return False
+            if location:
+                event_loc = event.get("location", {})
+                for key, value in location.items():
+                    if event_loc.get(key) != value:
+                        return False
+            return True
+
+        return filter_fn
+
 
 class EventSinkServer:
     """Manages the event sink server process for tests."""
@@ -166,7 +288,7 @@ class EventSinkServer:
     def __init__(
         self,
         host: str = '127.0.0.1',
-        port: int = 4317,
+        port: int = None,
         capture: Optional[EventCapture] = None
     ):
         """
@@ -174,15 +296,28 @@ class EventSinkServer:
 
         Args:
             host: Server host
-            port: Server port
+            port: Server port (None = auto-select free port)
             capture: Optional EventCapture to use instead of creating new one
         """
         self.host = host
-        self.port = port
-        self.url = f'http://{host}:{port}'
+        self.port = port or self._find_free_port()
+        self.url = f'http://{host}:{self.port}'
         self.capture = capture or EventCapture(self.url)
         self._process = None
         self._started = False
+
+    @staticmethod
+    def _find_free_port() -> int:
+        """Find a free port by binding to port 0."""
+        import socket
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(('127.0.0.1', 0))
+            return s.getsockname()[1]
+
+    @property
+    def events(self) -> List[Dict[str, Any]]:
+        """Get all captured events."""
+        return self.capture.get_all_events()
 
     def is_running(self) -> bool:
         """Check if event sink is running."""
@@ -255,6 +390,45 @@ class EventSinkServer:
         except Exception as e:
             logger.warning(f"Failed to clear events via API: {e}")
         return self.capture.clear()
+
+    def clear(self) -> int:
+        """Clear all captured events (alias for clear_events)."""
+        return self.clear_events()
+
+    def wait_for(
+        self,
+        predicate: Callable[[Dict[str, Any]], bool],
+        count: int = 1,
+        timeout: float = 5.0
+    ) -> List[Dict[str, Any]]:
+        """
+        Wait for events matching a predicate.
+
+        Args:
+            predicate: Filter function that returns bool
+            count: Minimum number of matching events to wait for
+            timeout: Maximum time to wait in seconds
+
+        Returns:
+            List of matching events
+
+        Raises:
+            TimeoutError: If not enough events arrive within timeout
+        """
+        start_time = time.time()
+        while True:
+            matching = [e for e in self.events if predicate(e)]
+            if len(matching) >= count:
+                return matching
+
+            elapsed = time.time() - start_time
+            if elapsed >= timeout:
+                raise TimeoutError(
+                    f"Timeout waiting for {count} events matching predicate "
+                    f"({elapsed:.1f}s > {timeout:.1f}s). Got {len(matching)} matching events."
+                )
+
+            time.sleep(0.1)
 
     def __enter__(self):
         """Context manager entry."""
