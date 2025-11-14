@@ -133,13 +133,82 @@ export TRACEPOINTDEBUG_ENGINE=auto
 
 **ARM64 & M1 support:** Currently ARM64 packages are not published to PyPI directory. They will be published soon and you can build the agent yourself to make use of it on an ARM machine.
 
+## Getting Started (Quick Demo)
 
-## Build
+1. **Start the event sink** (receives all probe events):
+```bash
+python scripts/event_sink.py --port 4317
+```
+
+2. **Start your Python application** with the agent enabled:
+```bash
+python -c "
+import tracepointdebug
+tracepointdebug.start(enable_control_api=True, control_api_port=5001)
+
+# Your app code here
+import time
+while True:
+    time.sleep(1)
+"
+```
+
+3. **Set a tracepoint** via the Control API:
+```bash
+curl -X POST http://localhost:5001/tracepoints \
+  -H "Content-Type: application/json" \
+  -d '{
+    "file": "your_file.py",
+    "line": 42,
+    "condition": null,
+    "snapshot": {"maxProperties": 100}
+  }'
+```
+
+4. **Trigger the code path** to capture events, then check the event sink output for captured snapshots.
+
+For full documentation on Control API endpoints, see `docs/control-plane-api.md`.
+
+
+## Build & Test
+
+This is a **multi-runtime debugger** supporting Python, Java, and Node.js. Use the top-level `Makefile` for convenient build and test targets.
+
+### Quick Start: Build Everything
+
+```bash
+# Install all runtimes (Python, Java, Node)
+make build
+
+# Run all test suites
+make test
+
+# Clean build artifacts
+make clean
+```
+
+### Build Individual Runtimes
+
+```bash
+# Python only
+make build-python
+make test-python
+
+# Java only (requires Java 8+ and Maven)
+make build-java
+make test-java
+
+# Node.js only (requires Node 14+)
+make build-node
+make test-node
+```
+
+### Python Detailed Build
 
 ##### Prerequisites
-- Python 3.8-3.12
-- CMake 3.20+
-- A C++17 compatible compiler
+- Python 3.8-3.14
+- CMake 3.20+ (optional, for native engine)
+- A C++17 compatible compiler (optional, for native engine)
 
 Build tracepointdebug using the modern build system:
 

@@ -3,6 +3,7 @@ import itertools
 import os
 import sys
 import types
+import logging
 
 import six
 
@@ -11,7 +12,10 @@ from .value import Value
 from .variable import Variable
 from .variables import Variables
 from .snapshot_collector_config_manager import SnapshotCollectorConfigManager
+from .serialization import CircularReferenceTracker, safe_serialize_object, is_non_serializable
 from tracepointdebug.probe.frame import Frame
+
+logger = logging.getLogger(__name__)
 
 _PRIMITIVE_TYPES = (type(None), float, complex, bool, slice, bytearray,
                     six.text_type,
@@ -24,10 +28,14 @@ _VECTOR_TYPES = (tuple, list, set)
 class SnapshotCollector(object):
     def __init__(self):
         self.cur_size = 0
+        self.tracker = CircularReferenceTracker(max_depth=SnapshotCollectorConfigManager.get_parse_depth())
 
     def collect(self, top_frame):
         frame = top_frame
         collected_frames = []
+        # Reset tracker for new collection
+        self.tracker = CircularReferenceTracker(max_depth=SnapshotCollectorConfigManager.get_parse_depth())
+
         while frame and len(collected_frames) < SnapshotCollectorConfigManager.get_max_frames():
             code = frame.f_code
             file_path = normalize_path(code.co_filename)
@@ -47,11 +55,23 @@ class SnapshotCollector(object):
         frame_locals = frame.f_locals
         variables = []
         for name, value in six.viewitems(frame_locals):
-            val = self.collect_variable_value(value, 0, SnapshotCollectorConfigManager.get_parse_depth())
-            if val is not None and type(value).__name__.find("byte") == -1:
-                variables.append(Variable(name, type(value).__name__, val))
-            if len(variables) > SnapshotCollectorConfigManager.get_max_properties():
-                break
+            try:
+                # Use enhanced serialization for robustness
+                if is_non_serializable(value):
+                    # Use safe_serialize_object for non-serializable types
+                    val = Value(var_type=type(value).__name__,
+                              value=safe_serialize_object(value, self.tracker))
+                else:
+                    val = self.collect_variable_value(value, 0, SnapshotCollectorConfigManager.get_parse_depth())
+
+                if val is not None and type(value).__name__.find("byte") == -1:
+                    variables.append(Variable(name, type(value).__name__, val))
+                if len(variables) > SnapshotCollectorConfigManager.get_max_properties():
+                    break
+            except Exception as e:
+                logger.warning(f"Error collecting variable '{name}': {e}")
+                # Skip problematic variable
+                continue
         return Variables(variables)
 
     def collect_variable_value(self, variable, depth, max_depth):

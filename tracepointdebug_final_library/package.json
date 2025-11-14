@@ -1,0 +1,31 @@
+{
+  "name": "tracepointdebug",
+  "version": "0.3.0",
+  "description": "Non-breaking logpoints and tracing for Node.js",
+  "main": "lib/index.js",
+  "license": "AGPL-3.0",
+  "scripts": {
+    "test": "node tests/node_test_plan.js"
+  },
+  "dependencies": {
+    "express": "^4.18.0"
+  },
+  "devDependencies": {
+    "jest": "^29.0.0"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "keywords": [
+    "debugging",
+    "tracing",
+    "logpoints",
+    "dynamic-logging",
+    "non-breaking-breakpoints"
+  ],
+  "author": "DebugIn Team",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/debugin/debugin.git"
+  }
+}
