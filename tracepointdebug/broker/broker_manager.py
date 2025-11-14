@@ -137,7 +137,7 @@ class BrokerManager(object):
             # Add runtime header for event sink
             import requests
             headers = {"X-Runtime": Application.get_application_info().get("applicationRuntime", "python")}
-            url = f"{self._client.base_url}/events"
+            url = f"{self._client.base_url}/api/events"
             
             # Use the EventClient's send method with retries
             for i in range(self._client.retries):

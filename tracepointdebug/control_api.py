@@ -320,19 +320,32 @@ class ControlAPI:
     def disable_tags(self):
         """Handle POST /tags/disable"""
         try:
-            body = request.get_json(force=True, silent=False)
-            tags = body.get("tags")
-            client = body.get("client")
-            if not isinstance(tags, list) or not all(isinstance(t, str) for t in tags):
-                return jsonify({"error":"tags must be a list of strings"}), 400
-            
-            if self.tag_manager:
-                self.tag_manager.disable_tag(tags, client)
-            
-            return jsonify({"ok": True})
+            data = request.get_json()
+            if 'tags' not in data:
+                return jsonify({
+                    "ok": False,
+                    "error": "Missing 'tags' field"
+                }), 400
+
+            tags = data['tags']
+            client = "control_api"
+
+            # Call disable on both tracepoint and logpoint managers
+            # This matches the behavior of enable_tags
+            if self.tracepoint_manager:
+                self.tracepoint_manager.disable_tag(tags, client)
+            if self.logpoint_manager:
+                self.logpoint_manager.disable_tag(tags, client)
+
+            return jsonify({
+                "ok": True
+            })
         except Exception as e:
-            # logger.exception("tags_disable failed")
-            return jsonify({"error": str(e)}), 500
+            logger.exception("tags_disable failed")
+            return jsonify({
+                "ok": False,
+                "error": f"Exception occurred: {str(e)}"
+            }), 500
     
     def enable_point(self):
         """Handle POST /points/enable"""
